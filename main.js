@@ -13,6 +13,7 @@ function init() {
     mera = new SoftEngine.Camera();
     device = new SoftEngine.Device(canvas);
 
+    //vector coordinates of each point of the cube
     mesh.Vertices[0] = new BABYLON.Vector3(-1, 1, 1);
     mesh.Vertices[1] = new BABYLON.Vector3(1, 1, 1);
     mesh.Vertices[2] = new BABYLON.Vector3(-1, -1, 1);
@@ -41,7 +42,7 @@ function drawingLoop() {
 }
 
 /*
-
+    rectangle
     mesh.Vertices[0] = new BABYLON.Vector3(-1.5, 1, 1);
     mesh.Vertices[1] = new BABYLON.Vector3(1.5, 1, 1);
     mesh.Vertices[2] = new BABYLON.Vector3(-1.5, -1, 1);
