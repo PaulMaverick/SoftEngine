@@ -89,6 +89,33 @@ const SoftEngine = {};
             this.drawLine(middlePoint, point1);
         }
 
+        Device.prototype.drawBLine = function (point0, point1) {
+            let x0 = point0.x >> 0;
+            let y0 = point0.y >> 0;
+            let x1 = point1.x >> 0;
+            let y1 = point1.y >> 0;
+            let dx = Math.abs(x1 - x0);
+            let dy = Math.abs(y1 - y0);
+            let sx = (x0 < x1) ? 1 : -1;
+            let sy = (y0 < y1) ? 1 : -1;
+            let err = dx - dy;
+
+            while(true) {
+                this.drawPoint(new BABYLON.Vector2(x0, y0));
+                if((x0 == x1) && (y0 == y1)) break;
+                let e2 = 2 * err;
+                if(e2 > -dy) {
+                    err -= dy;
+                    x0 += sx;
+                };
+                if(e2 < dx) {
+                    err += dx;
+                    y0 += sy;
+                }
+                    
+            }
+        }
+
         Device.prototype.render = function(camera, meshes) {
             const viewMatrix = BABYLON.Matrix.LookAtLH(camera.Position, camera.Target, BABYLON.Vector3.Up());
             const projectionMatrix = BABYLON.Matrix.PerspectiveFovLH(0.78, this.workingWidth / this.workingHeight, 0.01, 1.0);
@@ -124,9 +151,9 @@ const SoftEngine = {};
                         let pixelB = this.project(vertexB, transformMatrix);
                         let pixelC = this.project(vertexC, transformMatrix);
                     
-                        this.drawLine(pixelA, pixelB);
-                        this.drawLine(pixelB, pixelC);
-                        this.drawLine(pixelC, pixelA);
+                        this.drawBLine(pixelA, pixelB);
+                        this.drawBLine(pixelB, pixelC);
+                        this.drawBLine(pixelC, pixelA);
                     }
             }
         };
