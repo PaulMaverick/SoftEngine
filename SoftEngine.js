@@ -12,14 +12,13 @@ const SoftEngine = {};
     SoftEngine.Camera = Camera;
 
     const Mesh = (function() {
-        function Mesh(name, verticesCount) {
-            this.name = name
+        function Mesh(name, verticesCount, facesCount) {
+            this.name = name;
             this.Vertices = new Array(verticesCount);
-            this.Rotation = BABYLON.Vector3.Zero();
-            this.Position = BABYLON.Vector3.Zero();
-
+            this.Faces = new Array(facesCount);
+            this.Rotation = new BABYLON.Vector3(0, 0, 0);
+            this.Position = new BABYLON.Vector3(0, 0, 0);
         }
-
         return Mesh;
     })();
 
@@ -27,10 +26,12 @@ const SoftEngine = {};
 
     const Device = (function () {
         function Device(canvas) {
+            
             this.workingCanvas = canvas;
             this.workingWidth = canvas.width;
             this.workingHeight = canvas.height;
-            this.workingContext = this.workingCanvas.getContext("2d");
+            this.workingContext = this.workingCanvas.getContext("2d", { willReadFrequently: true });
+            
         }
 
         //clears the canvas with a new blank spaces
@@ -111,6 +112,22 @@ const SoftEngine = {};
                     let point1 = this.project(cMesh.Vertices[i + 1], transformMatrix);
                     this.drawLine(point0, point1);
                 }
+
+                for (let indexFaces = 0; indexFaces < cMesh.Faces.length; indexFaces++)
+                    {
+                        let currentFace = cMesh.Faces[indexFaces];
+                        let vertexA = cMesh.Vertices[currentFace.A];
+                        let vertexB = cMesh.Vertices[currentFace.B];
+                        let vertexC = cMesh.Vertices[currentFace.C];
+                    
+                        let pixelA = this.project(vertexA, transformMatrix);
+                        let pixelB = this.project(vertexB, transformMatrix);
+                        let pixelC = this.project(vertexC, transformMatrix);
+                    
+                        this.drawLine(pixelA, pixelB);
+                        this.drawLine(pixelB, pixelC);
+                        this.drawLine(pixelC, pixelA);
+                    }
             }
         };
 
