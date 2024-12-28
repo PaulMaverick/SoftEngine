@@ -1,4 +1,4 @@
-var SoftEngine;
+const SoftEngine = {};
 
 (function (SoftEngine) {
     const Camera = (function () {
@@ -74,6 +74,20 @@ var SoftEngine;
             }
         }
 
+        Device.prototype.drawLine = function (point0, point1) {
+            let dist = point1.subtract(point0).length();
+
+            if (dist < 2) {
+                return;
+            }
+
+            let middlePoint = point0.add((point1.subtract(point0)).scale(0.5));
+
+            this.drawPoint(middlePoint);
+            this.drawLine(point0, middlePoint);
+            this.drawLine(middlePoint, point1);
+        }
+
         Device.prototype.render = function(camera, meshes) {
             const viewMatrix = BABYLON.Matrix.LookAtLH(camera.Position, camera.Target, BABYLON.Vector3.Up());
             const projectionMatrix = BABYLON.Matrix.PerspectiveFovLH(0.78, this.workingWidth / this.workingHeight, 0.01, 1.0);
@@ -87,10 +101,15 @@ var SoftEngine;
 
                 let transformMatrix = worldMatrix.multiply(viewMatrix).multiply(projectionMatrix);
 
-                for (let indexVertices = 0; indexVertices < cMesh.Vertices.length; indexVertices++) {
-                    let projectedPoint = this.project(cMesh.Vertices[indexVertices], transformMatrix);
+                // for (let indexVertices = 0; indexVertices < cMesh.Vertices.length; indexVertices++) {
+                //     let projectedPoint = this.project(cMesh.Vertices[indexVertices], transformMatrix);
 
-                    this.drawPoint(projectedPoint);
+                //     this.drawPoint(projectedPoint);
+                // }
+                for (let i = 0; i < cMesh.Vertices.length -1; i++){
+                    let point0 = this.project(cMesh.Vertices[i], transformMatrix);
+                    let point1 = this.project(cMesh.Vertices[i + 1], transformMatrix);
+                    this.drawLine(point0, point1);
                 }
             }
         };
