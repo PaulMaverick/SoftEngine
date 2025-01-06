@@ -17,5 +17,7 @@ canvas {
     transform: translate(-50%, -55%);
     width: 960px;
     height: 600px;
+    /* width: 320px;
+    height: 240px; */
     background-color: black;
 }
