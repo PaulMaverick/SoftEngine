@@ -24,6 +24,51 @@ const SoftEngine = {};
 
     SoftEngine.Mesh = Mesh;
 
+    const Texture = (function () {
+        function Texture(filename, width, height) {
+            this.width = width;
+            this.height = height;
+            this.load(filename);
+        }
+
+        Texture.prototype.load = function(filename) {
+            let _this = this;
+            let imageTexture = new Image();
+            imageTexture.height = this.height;
+            imageTexture.width = this.width;
+            imageTexture.onload = function () {
+                let internalCanvas = document.createElement("canvas");
+                internalCanvas.width = _this.width;
+                internalCanvas.height = _this.height;
+                let internalContext = internalCanvas.getContext("2d");
+                internalContext.drawImage(imageTexture, 0, 0);
+                _this.internalBuffer = internalContext.getImageData(0, 0, _this.width, _this.height);
+            };
+            imageTexture.src = filename;
+        };
+
+        Texture.prototype.map = function (tu, tv) {
+            if (this.internalBuffer) {
+                let u = Math.abs(((tu * this.width) % this.width)) >> 0;
+                let v = Math.abs(((tv * this.height) % this.height)) >> 0;
+
+                let pos = (u + v * this.width) * 4;
+
+                let r = this.internalBuffer.data[pos];
+                let g = this.internalBuffer.data[pos + 1];
+                let b = this.internalBuffer.data[pos + 2];
+                let a = this.internalBuffer.data[pos + 3];
+
+                return new BABYLON.Color4(r / 255.0, g / 255.0, b / 255.0, a / 255.0);
+            } else {
+                return new BABYLON.Color4(1, 1, 1, 1);
+            }
+        };
+        return Texture;
+    })();
+
+    SoftEngine.Texture = Texture;
+
     const Device = (function () {
         function Device(canvas) {
             this.workingCanvas = canvas;
@@ -105,7 +150,8 @@ const SoftEngine = {};
             return ({
                 Coordinates: new BABYLON.Vector3(x, y, point2d.z),
                 Normal: normal3DWorld,
-                WorldCoordinates: point3DWorld
+                WorldCoordinates: point3DWorld,
+                TextureCoordinates: vertex.TextureCoordinates
             });
         }
 
@@ -119,33 +165,59 @@ const SoftEngine = {};
         }
 
 
-        Device.prototype.processScanLine = function(data, va, vb, vc, vd, color) {
+        Device.prototype.processScanLine = function(data, va, vb, vc, vd, color, texture) {
             let pa = va.Coordinates;
             let pb = vb.Coordinates;
             let pc = vc.Coordinates;
             let pd = vd.Coordinates;
 
+            //using y to compute the gradient and to computer other values 
             let gradient1 = pa.y != pb.y ? (data.currentY - pa.y) / (pb.y - pa.y) : 1;
             let gradient2 = pc.y != pd.y ? (data.currentY - pc.y) / (pd.y - pc.y) : 1;
 
+            //starting line sx and ending line ex
             let sx = this.interpolate(pa.x, pb.x, gradient1) >> 0;
             let ex = this.interpolate(pc.x, pd.x, gradient2) >> 0;
 
+            //starting z and ending z for the z-buffer
             let z1 = this.interpolate(pa.z, pb.z, gradient1);
             let z2 = this.interpolate(pc.z, pd.z, gradient2)
 
+            //interpolating normals
             let snl = this.interpolate(data.ndotla, data.ndotlb, gradient1);
             let enl = this.interpolate(data.ndotlc, data.ndotld, gradient2);
 
+            //texture coordinates
+            let su = this.interpolate(data.ua, data.ub, gradient1);
+            let eu = this.interpolate(data.uc, data.ud, gradient2);
+            let sv = this.interpolate(data.va, data.vb, gradient1);
+            let ev = this.interpolate(data.vc, data.vd, gradient2);
+
+
             for(let x = sx; x < ex; x++) {
                 let gradient = (x - sx) / (ex - sx);
+
+                //interpolating z, normal and textture
                 let z = this.interpolate(z1, z2, gradient);
                 let ndotl = this.interpolate(snl, enl, gradient);
-                this.drawPoint(new BABYLON.Vector3(x, data.currentY, z), new BABYLON.Color4(color.r * ndotl, color.g * ndotl, color.b * ndotl, 1));
+                let u = this.interpolate(su, eu, gradient);
+                let v = this.interpolate(sv, ev, gradient);
+
+                let textureColor;
+
+                if(texture) {
+                    textureColor = texture.map(u, v)
+                }else {
+                    textureColor = new BABYLON.Color4(1,1,1,1);
+                }
+
+                this.drawPoint(new BABYLON.Vector3(x, data.currentY, z), new BABYLON.Color4(color.r * ndotl * textureColor.r, 
+                                                                                            color.g * ndotl * textureColor.g, 
+                                                                                            color.b * ndotl * textureColor.b, 1));
             }
         };
 
-        Device.prototype.drawTriangle = function (v1, v2, v3, color) {
+        Device.prototype.drawTriangle = function (v1, v2, v3, color, texture) {
             //sorting each points in order (p1, p2, p3)
             //p1 is always up and p2 in between, and p3 in the bottom
             if(v1.Coordinates.y > v2.Coordinates.y) {
@@ -206,13 +278,35 @@ const SoftEngine = {};
                         data.ndotlb = nl3;
                         data.ndotlc = nl1;
                         data.ndotld = nl2;
-                        this.processScanLine(data, v1, v3, v1, v2, color);
+
+                        data.ua = v1.TextureCoordinates.x;
+                        data.ub = v3.TextureCoordinates.x;
+                        data.uc = v1.TextureCoordinates.x;
+                        data.ud = v2.TextureCoordinates.x;
+
+                        data.va = v1.TextureCoordinates.y;
+                        data.vb = v3.TextureCoordinates.y;
+                        data.vc = v1.TextureCoordinates.y;
+                        data.vd = v2.TextureCoordinates.y;
+
+                        this.processScanLine(data, v1, v3, v1, v2, color, texture);
                     } else {
                         data.ndotla = nl1;
                         data.ndotlb = nl3;
                         data.ndotlc = nl2;
                         data.ndotld = nl3;
-                        this.processScanLine(data, v1, v3, v2, v3, color);
+
+                        data.ua = v1.TextureCoordinates.x;
+                        data.ub = v3.TextureCoordinates.x;
+                        data.uc = v2.TextureCoordinates.x;
+                        data.ud = v3.TextureCoordinates.x;
+
+                        data.va = v1.TextureCoordinates.y;
+                        data.vb = v3.TextureCoordinates.y;
+                        data.vc = v2.TextureCoordinates.y;
+                        data.vd = v3.TextureCoordinates.y;
+
+                        this.processScanLine(data, v1, v3, v2, v3, color, texture);
                     }
                 }
             } else {
@@ -225,13 +319,35 @@ const SoftEngine = {};
                         data.ndotlb = nl2;
                         data.ndotlc = nl1;
                         data.ndotld = nl3;
-                        this.processScanLine(data, v1, v2, v1, v3, color);
+
+                        data.ua = v1.TextureCoordinates.x;
+                        data.ub = v2.TextureCoordinates.x;
+                        data.uc = v1.TextureCoordinates.x;
+                        data.ud = v3.TextureCoordinates.x;
+
+                        data.va = v1.TextureCoordinates.y;
+                        data.vb = v2.TextureCoordinates.y;
+                        data.vc = v1.TextureCoordinates.y;
+                        data.vd = v3.TextureCoordinates.y;
+
+                        this.processScanLine(data, v1, v2, v1, v3, color, texture);
                     } else {
                         data.ndotla = nl2;
                         data.ndotlb = nl3;
                         data.ndotlc = nl1;
                         data.ndotld = nl3;
-                        this.processScanLine(data, v2, v3, v1, v3, color);
+
+                        data.ua = v2.TextureCoordinates.x;
+                        data.ub = v3.TextureCoordinates.x;
+                        data.uc = v1.TextureCoordinates.x;
+                        data.ud = v3.TextureCoordinates.x;
+
+                        data.va = v2.TextureCoordinates.y;
+                        data.vb = v3.TextureCoordinates.y;
+                        data.vc = v1.TextureCoordinates.y;
+                        data.vd = v3.TextureCoordinates.y;
+
+                        this.processScanLine(data, v2, v3, v1, v3, color, texture);
                     }
                 }
             }
@@ -302,7 +418,7 @@ const SoftEngine = {};
                     let vertexA = cMesh.Vertices[currentFace.A];
                     let vertexB = cMesh.Vertices[currentFace.B];
                     let vertexC = cMesh.Vertices[currentFace.C];
-                
+                    
                     let pixelA = this.project(vertexA, transformMatrix, worldMatrix);
                     let pixelB = this.project(vertexB, transformMatrix, worldMatrix);
                     let pixelC = this.project(vertexC, transformMatrix, worldMatrix);
@@ -313,7 +429,7 @@ const SoftEngine = {};
 
                 
                     let color = 1.0;
-                    this.drawTriangle(pixelA, pixelB, pixelC, new BABYLON.Color4(color, color, color, 1));
+                    this.drawTriangle(pixelA, pixelB, pixelC, new BABYLON.Color4(color, color, color, 1), cMesh.Texture);
                 }
 
             }
@@ -344,10 +460,25 @@ const SoftEngine = {};
         }
 
         Device.prototype.CreateMeshesFromJSON = function (jsonObject) {
+
             let meshes = [];
+            let materials = [];
+
+            for (let materialIndex = 0; materialIndex < jsonObject.materials.length; materialIndex++) {
+                let material = {};
+
+                material.Name = jsonObject.materials[materialIndex].name;
+                material.ID = jsonObject.materials[materialIndex].id;
+                if (jsonObject.materials[materialIndex].diffuseTexture)
+                    material.DiffuseTextureName = jsonObject.materials[materialIndex].diffuseTexture.name;
+
+                materials[material.ID] = material;
+            }
 
             for(let meshIndex = 0; meshIndex < jsonObject.meshes.length; meshIndex++) {
+                //vertices
                 let verticesArray = jsonObject.meshes[meshIndex].vertices;
+                //indices
                 let indicesArray = jsonObject.meshes[meshIndex].indices;
                 let uvCount = jsonObject.meshes[meshIndex].uvCount;
                 let verticesStep = 1;
@@ -364,10 +495,13 @@ const SoftEngine = {};
                         break;
                 }
 
+                //number of vertices
                 let verticesCount = verticesArray.length / verticesStep;
+                //number of faces
                 let facesCount = indicesArray.length / 3;
                 let mesh = new SoftEngine.Mesh(jsonObject.meshes[meshIndex].name, verticesCount, facesCount);
 
+                //filling up vertices array 
                 for(let index = 0; index < verticesCount; index++) {
                     let x = verticesArray[index * verticesStep];
                     let y = verticesArray[index * verticesStep + 1];
@@ -380,8 +514,15 @@ const SoftEngine = {};
                     mesh.Vertices[index] = {
                         Coordinates: new BABYLON.Vector3(x,y,z),
                         Normal: new BABYLON.Vector3(nx,ny,nz),
-                        WorldCoordinates: null
                     };
+                   
+                    if (uvCount > 0) {
+                        let u = verticesArray[index * verticesStep + 6];
+                        let v = verticesArray[index * verticesStep + 7];
+                        mesh.Vertices[index].TextureCoordinates = new BABYLON.Vector2(u, v);
+                    } else {
+                        mesh.Vertices[index].TextureCoordinates = new BABYLON.Vector2(0, 0);
+                    }
                 }
 
                 for(let index = 0; index < facesCount; index++) {
@@ -397,6 +538,12 @@ const SoftEngine = {};
 
                 let position = jsonObject.meshes[meshIndex].position;
                 mesh.Position = new BABYLON.Vector3(position[0], position[1], position[2]);
+
+                if (uvCount > 0) {
+                    let meshTextureID = jsonObject.meshes[meshIndex].materialId;
+                    let meshTextureName = materials[meshTextureID].DiffuseTextureName;
+                    mesh.Texture = new Texture(meshTextureName, 512, 512);
+                }
                 meshes.push(mesh)
             }
 
@@ -407,4 +554,6 @@ const SoftEngine = {};
     })();
 
     SoftEngine.Device = Device;
+
+
 })(SoftEngine || (SoftEngine = {}))
