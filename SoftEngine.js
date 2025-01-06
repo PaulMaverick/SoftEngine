@@ -47,11 +47,6 @@ const SoftEngine = {};
             }
         }
 
-        //gets the image taken from the backbuffer and present it to the front buffer
-        Device.prototype.present = function () {
-            this.workingContext.putImageData(this.backbuffer, 0, 0);
-        }
-
         //puts a pixel on the screen in the given x and y coordinates
         Device.prototype.putPixel = function (x, y, z, color) {
             this.backbufferdata = this.backbuffer.data;
@@ -71,21 +66,16 @@ const SoftEngine = {};
             this.backbufferdata[index4 + 3] = color.a * 255;
         }
 
-        //turns 3d coordinates into 2d
-        Device.prototype.project = function (coord, transMat) {
-        
-            const point = BABYLON.Vector3.TransformCoordinates(coord, transMat);    
-            
-            let x = point.x * this.workingWidth + this.workingWidth / 2.0;
-            let y = -point.y * this.workingHeight + this.workingHeight / 2.0;
-            return (new BABYLON.Vector3(x, y, point.z));
-        }
-
         Device.prototype.drawPoint = function (point, color) {
             //make sures taht the given point is withing the showing screen 
             if (point.x >= 0 && point.y >= 0 && point.x < this.workingWidth && point.y < this.workingHeight) {
                 this.putPixel(point.x, point.y, point.z, color);
             }
+        }
+
+        //gets the image taken from the backbuffer and present it to the front buffer
+        Device.prototype.present = function () {
+            this.workingContext.putImageData(this.backbuffer, 0, 0);
         }
 
         //clamping the value between 1 and 0
@@ -102,9 +92,41 @@ const SoftEngine = {};
             return min + (max - min) * this.clamp(gradient);
         };
 
-        Device.prototype.processScanLine = function(y, pa, pb, pc, pd, color) {
-            let gradient1 = pa.y != pb.y ? (y - pa.y) / (pb.y - pa.y) : 1;
-            let gradient2 = pc.y != pd.y ? (y - pc.y) / (pd.y - pc.y) : 1;
+        //turns 3d coordinates into 2d
+        Device.prototype.project = function (vertex, transMat, world) {
+            //turns coordinates into 2d space
+            const point2d = BABYLON.Vector3.TransformCoordinates(vertex.Coordinates, transMat);
+            const point3DWorld = BABYLON.Vector3.TransformCoordinates(vertex.Coordinates, world);
+            const normal3DWorld = BABYLON.Vector3.TransformCoordinates(vertex.Normal, world);
+            
+
+            let x = point2d.x * this.workingWidth + this.workingWidth / 2.0;
+            let y = -point2d.y * this.workingHeight + this.workingHeight / 2.0;
+            return ({
+                Coordinates: new BABYLON.Vector3(x, y, point2d.z),
+                Normal: normal3DWorld,
+                WorldCoordinates: point3DWorld
+            });
+        }
+
+        Device.prototype.computeNDotL = function (vertex, normal, lightPosition) {
+            let lightDirection = lightPosition.subtract(vertex);
+
+            normal.normalize();
+            lightDirection.normalize();
+
+            return Math.max(0, BABYLON.Vector3.Dot(normal, lightDirection));
+        }
+
+
+        Device.prototype.processScanLine = function(data, va, vb, vc, vd, color) {
+            let pa = va.Coordinates;
+            let pb = vb.Coordinates;
+            let pc = vc.Coordinates;
+            let pd = vd.Coordinates;
+
+            let gradient1 = pa.y != pb.y ? (data.currentY - pa.y) / (pb.y - pa.y) : 1;
+            let gradient2 = pc.y != pd.y ? (data.currentY - pc.y) / (pd.y - pc.y) : 1;
 
             let sx = this.interpolate(pa.x, pb.x, gradient1) >> 0;
             let ex = this.interpolate(pc.x, pd.x, gradient2) >> 0;
@@ -115,28 +137,45 @@ const SoftEngine = {};
             for(let x = sx; x < ex; x++) {
                 let gradient = (x - sx) / (ex - sx);
                 let z = this.interpolate(z1, z2, gradient);
-                this.drawPoint(new BABYLON.Vector3(x, y, z), color);
+                let ndotl = data.ndotla;
+                this.drawPoint(new BABYLON.Vector3(x, data.currentY, z), new BABYLON.Color4(color.r * ndotl, color.g * ndotl, color.b * ndotl, 1));
             }
         };
 
-        Device.prototype.drawTriangle = function (p1, p2, p3, color) {
+        Device.prototype.drawTriangle = function (v1, v2, v3, color) {
             //sorting each points in order (p1, p2, p3)
             //p1 is always up and p2 in between, and p3 in the bottom
-            if(p1.y > p2.y) {
-                let temp = p2;
-                p2 = p1;
-                p1 = temp;
+            if(v1.Coordinates.y > v2.Coordinates.y) {
+                let temp = v2;
+                v2 = v1;
+                v1 = temp;
             }
-            if(p2.y > p3.y) {
-                let temp = p2;
-                p2 = p3;
-                p3 = temp;
+            if(v2.Coordinates.y > v3.Coordinates.y) {
+                let temp = v2;
+                v2 = v3;
+                v3 = temp;
             }
-            if(p1.y > p2.y) {
-                let temp = p2;
-                p2 = p1;
-                p1 = temp;
+            if(v1.Coordinates.y > v2.Coordinates.y) {
+                let temp = v2;
+                v2 = v1;
+                v1 = temp;
             }
+
+            let p1 = v1.Coordinates;
+            let p2 = v2.Coordinates;
+            let p3 = v3.Coordinates;
+
+            let vnFace = (v1.Normal.add(v2.Normal.add(v3.Normal))).scale(1/3);
+            let centerPoint = (v1.WorldCoordinates.add(v2.WorldCoordinates.add(v3.WorldCoordinates))).scale(1/3);
+
+            //light position
+            let lightPos = new BABYLON.Vector3(0, 10, 10);
+
+            let ndotl = this.computeNDotL(centerPoint, vnFace, lightPos);
+
+            let data = {ndotla: ndotl};
+
+
 
             //inverse slopes
             let dP1P2, dP1P3;
@@ -157,19 +196,23 @@ const SoftEngine = {};
             //if p2 is to the right of both p1 and p3
             if(dP1P2 > dP1P3) {
                 for(let y = p1.y >> 0; y <= p3.y >> 0; y++) {
+                    data.currentY = y;
+
                     if(y < p2.y) {
-                        this.processScanLine(y, p1, p3, p1, p2, color);
+                        this.processScanLine(data, v1, v3, v1, v2, color);
                     } else {
-                        this.processScanLine(y, p1, p3, p2, p3, color);
+                        this.processScanLine(data, v1, v3, v2, v3, color);
                     }
                 }
             } else {
                 //if p2 is to the left of both p1 and p3
                 for(let y = p1.y >> 0; y <= p3.y >> 0; y++) {
+                    data.currentY = y
+
                     if(y < p2.y) {
-                        this.processScanLine(y, p1, p2, p1, p3, color);
+                        this.processScanLine(data, v1, v2, v1, v3, color);
                     } else {
-                        this.processScanLine(y, p2, p3, p1, p3, color);
+                        this.processScanLine(data, v2, v3, v1, v3, color);
                     }
                 }
             }
@@ -241,16 +284,16 @@ const SoftEngine = {};
                     let vertexB = cMesh.Vertices[currentFace.B];
                     let vertexC = cMesh.Vertices[currentFace.C];
                 
-                    let pixelA = this.project(vertexA, transformMatrix);
-                    let pixelB = this.project(vertexB, transformMatrix);
-                    let pixelC = this.project(vertexC, transformMatrix);
+                    let pixelA = this.project(vertexA, transformMatrix, worldMatrix);
+                    let pixelB = this.project(vertexB, transformMatrix, worldMatrix);
+                    let pixelC = this.project(vertexC, transformMatrix, worldMatrix);
 
                     // this.drawBLine(pixelA, pixelB);
                     // this.drawBLine(pixelB, pixelC);
                     // this.drawBLine(pixelC, pixelA);
 
                 
-                    let color = 0.25 + ((indexFaces % cMesh.Faces.length) / cMesh.Faces.length) * 0.75;
+                    let color = 1.0;
                     this.drawTriangle(pixelA, pixelB, pixelC, new BABYLON.Color4(color, color, color, 1));
                 }
 
@@ -310,7 +353,16 @@ const SoftEngine = {};
                     let x = verticesArray[index * verticesStep];
                     let y = verticesArray[index * verticesStep + 1];
                     let z = verticesArray[index * verticesStep + 2];
-                    mesh.Vertices[index] = new BABYLON.Vector3(x,y,z);
+                    // vertex normal
+                    let nx = verticesArray[index * verticesStep + 3];
+                    let ny = verticesArray[index * verticesStep + 4];
+                    let nz = verticesArray[index * verticesStep + 5];
+
+                    mesh.Vertices[index] = {
+                        Coordinates: new BABYLON.Vector3(x,y,z),
+                        Normal: new BABYLON.Vector3(nx,ny,nz),
+                        WorldCoordinates: null
+                    };
                 }
 
                 for(let index = 0; index < facesCount; index++) {

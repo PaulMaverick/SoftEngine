@@ -1,15 +1,31 @@
+window.requestAnimationFrame = (function () {
+    return window.requestAnimationFrame || 
+            window.webkitRequestAnimationFrame || 
+            window.mozRequestAnimationFrame ||
+            function (callback) {
+                window.setTimeout(callback, 1000 / 60);
+            };
+})();
+
 let canvas;
 let device;
 let meshes = [];
 let mera;
 let mesh;
+let divCurrentFPS;
+let divAverageFPS;
+let previousDate = Date.now();
+let lastFPSValues = new Array(60);
 
 document.addEventListener("DOMContentLoaded", init, false);
 
 function init() {
     canvas = document.getElementById("main-view");
+    divCurrentFPS = document.getElementById("currentFPS");
+    divAverageFPS = document.getElementById("averageFPS");
     mera = new SoftEngine.Camera();
     device = new SoftEngine.Device(canvas);
+
     mera.Position = new BABYLON.Vector3(0, 0, 8);
     mera.Target = new BABYLON.Vector3(0, 0, 0);
     loadMesh("monkey.babylon");
@@ -33,10 +49,30 @@ function loadJSONComplete(meshesLoaded) {
 }
 
 function drawingLoop() {
+    let now = Date.now();
+    let currentFPS = 1600 / (now - previousDate);
+    previousDate = now;
+
+    divCurrentFPS.textContent = currentFPS.toFixed(2);
+
+    if(lastFPSValues.length < 60) {
+        lastFPSValues.push(currentFPS);
+    } else {
+        lastFPSValues.shift();
+        lastFPSValues.push(currentFPS);
+        let totalValues = 0;
+        for(let i = 0; i < lastFPSValues.length; i++) {
+            totalValues += lastFPSValues[i];
+        }
+
+        let averageFPS = totalValues / lastFPSValues.length;
+        divAverageFPS.textContent = averageFPS.toFixed(2);
+    }
+
     device.clear();
     for (let i = 0; i < meshes.length; i++) {
         // rotating slightly the mesh during each frame rendered
-        meshes[i].Rotation.x += 0.01;
+        // meshes[i].Rotation.x += 0.01;
         meshes[i].Rotation.y += 0.01;
     }
 
