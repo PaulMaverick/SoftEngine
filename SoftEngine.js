@@ -134,10 +134,13 @@ const SoftEngine = {};
             let z1 = this.interpolate(pa.z, pb.z, gradient1);
             let z2 = this.interpolate(pc.z, pd.z, gradient2)
 
+            let snl = this.interpolate(data.ndotla, data.ndotlb, gradient1);
+            let enl = this.interpolate(data.ndotlc, data.ndotld, gradient2);
+
             for(let x = sx; x < ex; x++) {
                 let gradient = (x - sx) / (ex - sx);
                 let z = this.interpolate(z1, z2, gradient);
-                let ndotl = data.ndotla;
+                let ndotl = this.interpolate(snl, enl, gradient);
                 this.drawPoint(new BABYLON.Vector3(x, data.currentY, z), new BABYLON.Color4(color.r * ndotl, color.g * ndotl, color.b * ndotl, 1));
             }
         };
@@ -171,11 +174,11 @@ const SoftEngine = {};
             //light position
             let lightPos = new BABYLON.Vector3(0, 10, 10);
 
-            let ndotl = this.computeNDotL(centerPoint, vnFace, lightPos);
+            let nl1 = this.computeNDotL(v1.WorldCoordinates, v1.Normal, lightPos)
+            let nl2 = this.computeNDotL(v2.WorldCoordinates, v2.Normal, lightPos)
+            let nl3 = this.computeNDotL(v3.WorldCoordinates, v3.Normal, lightPos)
 
-            let data = {ndotla: ndotl};
-
-
+            let data = {};
 
             //inverse slopes
             let dP1P2, dP1P3;
@@ -199,8 +202,16 @@ const SoftEngine = {};
                     data.currentY = y;
 
                     if(y < p2.y) {
+                        data.ndotla = nl1;
+                        data.ndotlb = nl3;
+                        data.ndotlc = nl1;
+                        data.ndotld = nl2;
                         this.processScanLine(data, v1, v3, v1, v2, color);
                     } else {
+                        data.ndotla = nl1;
+                        data.ndotlb = nl3;
+                        data.ndotlc = nl2;
+                        data.ndotld = nl3;
                         this.processScanLine(data, v1, v3, v2, v3, color);
                     }
                 }
@@ -210,8 +221,16 @@ const SoftEngine = {};
                     data.currentY = y
 
                     if(y < p2.y) {
+                        data.ndotla = nl1;
+                        data.ndotlb = nl2;
+                        data.ndotlc = nl1;
+                        data.ndotld = nl3;
                         this.processScanLine(data, v1, v2, v1, v3, color);
                     } else {
+                        data.ndotla = nl2;
+                        data.ndotlb = nl3;
+                        data.ndotlc = nl1;
+                        data.ndotld = nl3;
                         this.processScanLine(data, v2, v3, v1, v3, color);
                     }
                 }
